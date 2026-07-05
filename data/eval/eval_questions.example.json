@@ -1,0 +1,15 @@
+[
+  {
+    "question": "What was the company's total revenue in the most recent fiscal year?",
+    "gold_pages": ["annual_report_2024::p12"],
+    "reference_answer": "Fill in after annotating your own documents."
+  },
+  {
+    "question": "Which business segment showed the strongest year-over-year growth according to the segment results chart?",
+    "gold_pages": ["annual_report_2024::p18", "annual_report_2024::p19"]
+  },
+  {
+    "question": "What does the revenue trend chart show for the last five years?",
+    "gold_pages": ["annual_report_2024::p8"]
+  }
+]
