@@ -1,0 +1,52 @@
+[
+  {
+    "question": "What were Berkshire's insurance-underwriting earnings in 2024, and how do they compare to 2023?",
+    "gold_pages": ["berkshire_2024_letter::p5"],
+    "reference_answer": "Insurance-underwriting earned $9,020 million in 2024, up from $5,428 million in 2023."
+  },
+  {
+    "question": "How many of Berkshire's operating businesses reported a decline in earnings in 2024?",
+    "gold_pages": ["berkshire_2024_letter::p4"],
+    "reference_answer": "53% of Berkshire's 189 operating businesses reported a decline in earnings."
+  },
+  {
+    "question": "When did Berkshire pay its only cash dividend and how much was it?",
+    "gold_pages": ["berkshire_2024_letter::p6"],
+    "reference_answer": "On January 3, 1967, Berkshire disbursed its sole dividend of $101,755, or 10 cents per A share."
+  },
+  {
+    "question": "How did Berkshire's per-share market value perform versus the S&P 500 in 1965?",
+    "gold_pages": ["berkshire_2024_letter::p14"],
+    "reference_answer": "In 1965 Berkshire's per-share market value gained 49.5% versus 10.0% for the S&P 500 with dividends included."
+  },
+  {
+    "question": "What is the EIA's Brent crude oil spot price forecast for 2026?",
+    "gold_pages": ["eia_short_term_energy_outlook::p3", "eia_short_term_energy_outlook::p34"],
+    "reference_answer": "The EIA forecasts the Brent crude oil spot price to average $95 per barrel in 2026."
+  },
+  {
+    "question": "What event caused the heightened volatility in global oil markets according to the EIA?",
+    "gold_pages": ["eia_short_term_energy_outlook::p6"],
+    "reference_answer": "The de facto closure of the Strait of Hormuz, a major world oil transit chokepoint."
+  },
+  {
+    "question": "How much does the EIA expect US marketed natural gas production to grow in 2026?",
+    "gold_pages": ["eia_short_term_energy_outlook::p13", "eia_short_term_energy_outlook::p44"],
+    "reference_answer": "US marketed natural gas production grows by 3.3% in 2026, about 3.9 billion cubic feet per day."
+  },
+  {
+    "question": "What was the Henry Hub natural gas spot price average in May?",
+    "gold_pages": ["eia_short_term_energy_outlook::p12"],
+    "reference_answer": "The Henry Hub spot price averaged $2.94 per million British thermal units in May, up 17 cents from April."
+  },
+  {
+    "question": "What is the forecast WTI spot price for the second quarter of 2026?",
+    "gold_pages": ["eia_short_term_energy_outlook::p34"],
+    "reference_answer": "The West Texas Intermediate spot average forecast for Q2 2026 is $100.43 per barrel."
+  },
+  {
+    "question": "By how much did US coal consumption decline in the first quarter of 2026?",
+    "gold_pages": ["eia_short_term_energy_outlook::p15"],
+    "reference_answer": "Coal consumption declined by 11%, or 13 million short tons, compared with the same period last year."
+  }
+]
