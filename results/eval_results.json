@@ -1,0 +1,204 @@
+{
+  "summary": {
+    "n_questions": 10,
+    "hit@1": 0.8,
+    "hit@k": 0.9,
+    "mrr": 0.8333333333333333,
+    "faithfulness_avg": 5.0,
+    "relevance_avg": 5.0
+  },
+  "results": [
+    {
+      "question": "What were Berkshire's insurance-underwriting earnings in 2024, and how do they compare to 2023?",
+      "retrieved_pages": [
+        "berkshire_2024_letter::p5",
+        "berkshire_2024_letter::p4",
+        "berkshire_2024_letter::p10",
+        "berkshire_2024_letter::p9",
+        "berkshire_2024_letter::p15"
+      ],
+      "gold_pages": [
+        "berkshire_2024_letter::p5"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "Berkshire's insurance-underwriting earnings in 2024 were $9,020 million. This is an increase compared to 2023, when they were $5,428 million [berkshire_2024_letter p.5].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "How many of Berkshire's operating businesses reported a decline in earnings in 2024?",
+      "retrieved_pages": [
+        "berkshire_2024_letter::p4",
+        "berkshire_2024_letter::p5",
+        "berkshire_2024_letter::p6",
+        "berkshire_2024_letter::p11",
+        "berkshire_2024_letter::p1"
+      ],
+      "gold_pages": [
+        "berkshire_2024_letter::p4"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "The provided document states that \"53% of our 189 operating businesses reported a decline in earnings\" in 2024 [berkshire_2024_letter p.4]. However, it does not explicitly provide the exact numerical count of businesses that experienced a decline.",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "When did Berkshire pay its only cash dividend and how much was it?",
+      "retrieved_pages": [
+        "berkshire_2024_letter::p6",
+        "berkshire_2024_letter::p11",
+        "berkshire_2024_letter::p5",
+        "berkshire_2024_letter::p4",
+        "berkshire_2024_letter::p14"
+      ],
+      "gold_pages": [
+        "berkshire_2024_letter::p6"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "Berkshire paid its only cash dividend on January 3, 1967. The amount disbursed was $101,755 or 10\u00a2 per A share [berkshire_2024_letter p.6].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "How did Berkshire's per-share market value perform versus the S&P 500 in 1965?",
+      "retrieved_pages": [
+        "berkshire_2024_letter::p14",
+        "berkshire_2024_letter::p15",
+        "berkshire_2024_letter::p6",
+        "berkshire_2024_letter::p11",
+        "berkshire_2024_letter::p8"
+      ],
+      "gold_pages": [
+        "berkshire_2024_letter::p14"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "In 1965, Berkshire's per-share market value increased by 49.5%, while the S&P 500 with dividends included increased by 10.0% [berkshire_2024_letter p.14].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "What is the EIA's Brent crude oil spot price forecast for 2026?",
+      "retrieved_pages": [
+        "eia_short_term_energy_outlook::p8",
+        "eia_short_term_energy_outlook::p4",
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p20",
+        "eia_short_term_energy_outlook::p17"
+      ],
+      "gold_pages": [
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p34"
+      ],
+      "hit_at_1": false,
+      "hit_at_k": true,
+      "reciprocal_rank": 0.3333333333333333,
+      "answer": "The EIA's Brent crude oil spot price forecast for 2026 is $95 per barrel [eia_short_term_energy_outlook p.3].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "What event caused the heightened volatility in global oil markets according to the EIA?",
+      "retrieved_pages": [
+        "eia_short_term_energy_outlook::p6",
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p9",
+        "eia_short_term_energy_outlook::p8",
+        "eia_short_term_energy_outlook::p20"
+      ],
+      "gold_pages": [
+        "eia_short_term_energy_outlook::p6"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "According to the EIA, global oil markets remain in a period of heightened volatility and uncertainty due to \"the de facto closure of the Strait of Hormuz, a major world oil transit choke point,\" which has now surpassed three months [eia_short_term_energy_outlook p.6].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "How much does the EIA expect US marketed natural gas production to grow in 2026?",
+      "retrieved_pages": [
+        "eia_short_term_energy_outlook::p13",
+        "eia_short_term_energy_outlook::p31",
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p44",
+        "eia_short_term_energy_outlook::p26"
+      ],
+      "gold_pages": [
+        "eia_short_term_energy_outlook::p13",
+        "eia_short_term_energy_outlook::p44"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "The EIA expects U.S. marketed natural gas production to grow by **3.3% in 2026** [eia_short_term_energy_outlook p.13].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "What was the Henry Hub natural gas spot price average in May?",
+      "retrieved_pages": [
+        "eia_short_term_energy_outlook::p12",
+        "eia_short_term_energy_outlook::p24",
+        "eia_short_term_energy_outlook::p5",
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p45"
+      ],
+      "gold_pages": [
+        "eia_short_term_energy_outlook::p12"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "In May, the Henry Hub spot price for natural gas averaged $2.94 per million British thermal units (MMBtu) [eia_short_term_energy_outlook p.12].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "What is the forecast WTI spot price for the second quarter of 2026?",
+      "retrieved_pages": [
+        "eia_short_term_energy_outlook::p17",
+        "eia_short_term_energy_outlook::p4",
+        "eia_short_term_energy_outlook::p8",
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p5"
+      ],
+      "gold_pages": [
+        "eia_short_term_energy_outlook::p34"
+      ],
+      "hit_at_1": false,
+      "hit_at_k": false,
+      "reciprocal_rank": 0.0,
+      "answer": "The provided document pages do not contain the forecast WTI spot price for the second quarter of 2026. While a chart shows the \"West Texas Intermediate (WTI) crude oil price and NYMEX futures price\" forecast for 2026 [eia_short_term_energy_outlook p.17], it does not provide specific quarterly values. Another chart provides quarterly data for \"Brent crude oil spot price\" but not for WTI [eia_short_term_energy_outlook p.8].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    },
+    {
+      "question": "By how much did US coal consumption decline in the first quarter of 2026?",
+      "retrieved_pages": [
+        "eia_short_term_energy_outlook::p15",
+        "eia_short_term_energy_outlook::p28",
+        "eia_short_term_energy_outlook::p14",
+        "eia_short_term_energy_outlook::p3",
+        "eia_short_term_energy_outlook::p27"
+      ],
+      "gold_pages": [
+        "eia_short_term_energy_outlook::p15"
+      ],
+      "hit_at_1": true,
+      "hit_at_k": true,
+      "reciprocal_rank": 1.0,
+      "answer": "During the first quarter of 2026 (1Q26), US coal consumption declined by 11% (13 MMst) compared with the same period last year [eia_short_term_energy_outlook p.15].",
+      "faithfulness": 5.0,
+      "relevance": 5.0
+    }
+  ]
+}
