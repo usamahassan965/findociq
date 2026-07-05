@@ -7,6 +7,10 @@ FinDocIQ retrieves document *page images* directly using ColQwen2.5 late-interac
 embeddings (the ColPali approach), fuses them with classic dense text retrieval, and answers
 with a vision-language model that cites the exact pages it used.
 
+> 📋 **[Engineering case study](docs/CASE_STUDY.md)** — the full story: problem, options
+> considered at each stage, real captured output from every pipeline stage (per-lane retrieval
+> rankings, fusion behavior, failure analysis), and the engineering problems hit along the way.
+
 ## Why this is different from a typical RAG project
 
 Text-only RAG pipelines OCR a PDF, chunk the text, and lose every chart, table layout, and
