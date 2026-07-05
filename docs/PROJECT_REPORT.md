@@ -40,13 +40,18 @@ while actually *looking* at them, under hard constraints:
 ### Stage 2 — Dual indexing (ColQwen2.5 + BGE-small → Qdrant)
 Embedded on a Kaggle P100 GPU kernel (fp16, batch size 1):
 
-- **Visual lane:** 75 pages × **755 patch vectors × 128-d** each (late-interaction multivector,
-  Qdrant MAX_SIM comparator) — ~19 MB of fp16 artifacts shipped back, instead of the 7.5 GB model.
-- **Text lane:** 75 × **384-d** BGE-small dense vectors (cosine).
+- **Visual lane:** ColQwen2.5 (`vidore/colqwen2.5-v0.2`) — 75 pages × **755 patch vectors ×
+  128-d** each (late-interaction multivector, Qdrant MAX_SIM comparator) — ~19 MB of fp16
+  artifacts shipped back, instead of the 7.5 GB model.
+- **Text lane:** BGE-small (`BAAI/bge-small-en-v1.5`) — 75 × **384-d** dense vectors (cosine),
+  embedded on CPU.
 - One page (a sparse cover page) produced NaN patch vectors from fp16 overflow — sanitized with
   `nan_to_num` (zero vectors can never win MAX_SIM, so this is lossless for ranking).
 
 ### Stage 3 — Hybrid retrieval (the money stage)
+
+Each lane returns its top-15 candidates (`fetch_k = 15`); Reciprocal Rank Fusion (`k = 60`)
+merges the two ranked lists and keeps the top 5 (`top_k = 5`) for generation.
 
 **Query:** *"What were Berkshire's insurance-underwriting earnings in 2024, and how do they
 compare to 2023?"* — gold page **p5** (the earnings breakdown table).
@@ -61,7 +66,7 @@ The text lane ranks the prose page p4 first — the extracted text of the table 
 than surrounding narrative. The **visual lane sees the table itself** and ranks p5 first with a
 wide margin; fusion keeps it at rank 1.
 
-The fusion insurance works in **both directions**. For *"How much does the EIA expect US marketed
+The same insurance works in **both directions**. For *"How much does the EIA expect US marketed
 natural gas production to grow in 2026?"* (gold p13), the visual lane ranks a wrong chart page
 p25 first (24.21 vs 23.98 — nearly tied); the text lane ranks p13 first decisively (0.811 vs
 0.756), and fusion restores p13 to rank 1. Neither lane alone gets both questions right; the
@@ -84,6 +89,10 @@ of hallucinating one (that answer still scored faithfulness 5/5).
 
 ### Stage 5 — Evaluation (10 gold-annotated questions, full corpus)
 
+Retrieval is scored exactly against hand-annotated gold pages (hit@k, MRR); answer quality is
+scored by Gemini 2.5 Flash-Lite — deliberately a **different model** from the generator — on
+separate 1–5 faithfulness and relevance rubrics, with the gold answer in the judge prompt.
+
 | Metric | Score |
 |---|---|
 | hit@1 | **0.80** |
@@ -96,8 +105,8 @@ of hallucinating one (that answer still scored faithfulness 5/5).
 (e.g. *"WTI spot price for Q2 2026"*, gold p34 below right). The gold page is a wall of small
 numbers with almost no distinguishing text or visual structure; both lanes rank the WTI *price
 chart* page p17 (below left) above it. That's the known hard case for page-level retrieval — the
-fix would be table-cell-level indexing (extract tables → index rows), which is the top item on
-the roadmap.
+fix would be table-aware indexing (extract tables → index rows/cells), which is the first item
+in the next-level solution below.
 
 | What both lanes retrieved (p17, chart) | What the gold answer needed (p34, dense table) |
 |---|---|
@@ -111,28 +120,90 @@ Docker Compose. Public demo: [Hugging Face Space](https://huggingface.co/spaces/
 
 ## 4. Engineering problems actually hit (and fixed)
 
-1. **7.5 GB model vs. throttled connection.** ColQwen2.5 downloads kept stalling locally. Instead
-   of fighting it, inverted the architecture: run embedding **where the model already is** (Kaggle
-   GPU) and ship back only the ~19 MB of embedding artifacts (`.npz`). The model never needs to
-   reach the serving machine.
-2. **Kaggle API kernels always get a P100 (compute capability 6.0)** — current PyTorch wheels
-   dropped Pascal support (`CUDA error: no kernel image`). Fix: the kernel self-detects
-   `torch.cuda.get_device_capability() < (7,0)`, installs `torch 2.5.1+cu121` +
-   `colpali-engine 0.3.9` + `transformers<5`, and re-execs itself. fp16 instead of bf16 (no bf16
-   on Pascal), batch size 1 (the fp16 model alone is 8.5 GB of the 16 GB card).
-3. **fp16 overflow → NaN embeddings** on 1 of 75 pages; Qdrant rejects NaN vectors. Diagnosed to
-   a near-blank cover page, sanitized to zeros (harmless under MAX_SIM).
-4. **Free-tier quota engineering.** Gemini free keys allow ~20 requests/day *per model per
-   project*. The eval needs 20 calls (10 answers + 10 judgments) — split across two models
-   (Flash generates, Flash-Lite judges — which independently reduces self-grading bias), with
-   429-aware retry/backoff and per-question progress checkpointing so a mid-run failure never
-   loses completed work.
-5. **Secrets never leave the machine.** The Kaggle kernel does GPU-only work; all Gemini calls
-   run locally, so no API key is ever bundled into an uploadable artifact.
+1. **fp16 numerical overflow silently poisoned an embedding.** After switching the encoder from
+   bf16 to fp16 (see problem 2), exactly 1 page out of 75 came back as 755 patch vectors of pure
+   `NaN` — and Qdrant rejects NaN payloads at insert time, so the whole indexing run died. bf16
+   and fp16 both use 16 bits, but bf16 keeps float32's exponent range (~10³⁸) while fp16 caps at
+   65,504; one intermediate activation overflowed to `inf`, and `inf − inf` in the following
+   normalization produced NaN that propagated through every downstream value. Diagnosis: dumped
+   per-page `isnan()` counts, isolated the page — a near-blank cover with almost no visual signal.
+   Fix: `nan_to_num` sanitization to zero vectors, which is provably safe under MAX_SIM ranking —
+   a zero vector's dot product with any query embedding is 0, so a blank page can never outrank a
+   real one.
+2. **Running a 3B late-interaction VLM on a 2016 GPU (compute capability 6.0).** The free GPU
+   available programmatically was a Kaggle P100 — Pascal architecture, which has **no bf16
+   hardware support** and is no longer compiled into current PyTorch wheels (`CUDA error: no
+   kernel image is available for execution on the device`). ColQwen2.5's reference setup assumes
+   bf16 on Ampere or newer. The pipeline had to become hardware-adaptive: the kernel reads
+   `torch.cuda.get_device_capability()` at runtime, and below (7,0) it pins a Pascal-compatible
+   stack (`torch 2.5.1+cu121`, `colpali-engine 0.3.9`) and re-executes itself via `os.execv` so
+   the new versions are actually the ones imported. Memory math forced the rest: the fp16 weights
+   alone are 8.5 GB of the 16 GB card, and one page yields 755 × 128 patch vectors plus
+   activations — so batch size 1 with cache eviction between pages. The same code still runs
+   bf16/batched on a modern GPU; the P100 path costs ~2 min for 75 pages.
+3. **Fusing two retrievers whose scores live on incomparable scales.** The visual lane scores
+   with late-interaction MAX_SIM — an *unbounded sum* over ~30 query-token maxima that landed
+   anywhere from 20 to 30 depending on query length — while the text lane returns cosine
+   similarity in [0, 1]. Min-max normalizing 15 candidates per lane makes the result hostage to
+   each lane's outliers: one freak top score compresses every other candidate toward 0, and the
+   same page gets wildly different normalized scores on different queries. Scores were dropped
+   entirely in favor of *rank-space* fusion with RRF (`score = Σ 1/(60 + rank)`, fetch_k = 15 per
+   lane, top_k = 5 out). The eval shows the fusion earning its keep in both directions: on the
+   insurance-float question the text lane ranks the wrong page first (0.778 vs 0.767) but the
+   visual lane's decisive margin (MAX_SIM 29.47) holds p5 at rank 1; on the natural-gas question
+   the visual lane is the one that's wrong (24.21 vs 23.98) and the text lane (cosine 0.811)
+   pulls p13 back to the top. Neither lane alone gets both questions right.
+4. **A retrieval failure signature no embedding tweak can fix.** Both hit@1 misses share one
+   signature: the question asks for a *single number inside a dense quarterly statistics table*
+   (gold: p34), and both lanes — visual and text — instead rank a chart page (p17) that
+   summarizes the same variable first. That's not a bug in either encoder; it's a granularity
+   mismatch. A page-level embedding of a 40-row table dilutes any individual cell into an average
+   of everything around it, while a chart page about the same topic is semantically "denser" for
+   the query terms. Fusion can't rescue you when both lanes agree on the wrong page. The failure
+   stays in the report deliberately — knowing the boundary of the architecture is the point of
+   evaluating it — and it directly motivates the first item in the next-level solution below.
+5. **Making an LLM judge trustworthy under a ~20-requests/day quota.** Two separate problems
+   hide in "just have an LLM grade the answers." First, integrity: if the same model generates
+   and grades, scores inherit self-grading bias — so Gemini 2.5 Flash answers and Flash-Lite
+   judges, with the judge given the gold answer and scoring faithfulness and relevance on
+   separate 1–5 rubrics rather than one vague "quality" number. Second, feasibility: free-tier
+   keys allow roughly 20 requests/day *per model per project*, and the eval needs exactly
+   10 generations + 10 judgments. That leaves a budget of *zero* wasted calls, so the eval loop
+   is idempotent — every completed answer/judgment is checkpointed to disk immediately, reruns
+   skip finished questions, and 429 responses trigger exponential backoff instead of a crash
+   that would burn the day's quota. A judge run that dies at question 9 resumes at question 9.
+6. **Decoupling GPU compute from serving with a 19 MB artifact contract.** The heavy model
+   (7.5 GB ColQwen2.5) and the serving machine never need to meet. The Kaggle kernel's only
+   output is a versioned artifact — `embeddings.npz` + manifest, ~19 MB for 75 pages — and the
+   local indexer treats it as a contract: it derives Qdrant point IDs as
+   `uuid5(doc_id, page_number)`, so re-running ingestion is idempotent (the same page always
+   maps to the same point; re-uploads overwrite instead of duplicating) and embeddings can be
+   regenerated on any GPU without touching the serving stack. Side benefit: the API key for
+   generation never leaves the local machine, because the remote kernel only ever does
+   embedding math.
 
-## 5. What I'd build next
+## 5. Next-level solution
 
-- **Table-cell-level indexing** to fix the dense-table hit@1 misses (the only failure mode found).
-- Scale eval past 10 questions with synthetic QA generation + human spot-checks.
-- Qdrant binary quantization for the multivectors (755 × 128 fp16/page gets expensive at 10K+ pages).
-- Swap the judge to a stronger paid model for calibration once budget allows.
+What separates this prototype from a production document-intelligence system — each item targets
+a measured limitation, not a hypothetical one.
+
+- **Table-aware indexing.** Extract tables at parse time and index row/cell-level granules
+  alongside page-level vectors, then route numeric "what was X in Q3" queries to the
+  fine-grained index. Directly attacks the only failure mode the eval found (both misses were
+  dense-table lookups losing to chart pages).
+- **Reranking stage after fusion.** RRF discards score magnitude by design; a cross-encoder
+  reranker over the top-15 fused candidates re-reads the actual page content against the query
+  and would likely recover the p34-vs-p17 confusions without touching the indexes.
+- **Multivector compression for scale.** 755 × 128 fp16 vectors ≈ 189 KB per page — fine at
+  75 pages, untenable at 100K. Binary quantization plus two-stage retrieval (mean-pooled
+  single-vector recall, then exact MAX_SIM rescoring on the shortlist) cuts storage ~32× with
+  minimal ranking loss.
+- **Eval at scale, stratified by page type.** 10 hand-written questions prove the pipeline; they
+  can't measure it. Generate synthetic QA pairs stratified across prose, table, and chart pages
+  (with human spot-checks), so per-page-type hit rates expose exactly where retrieval degrades.
+- **Query-adaptive lane weighting.** Today both lanes vote equally in RRF. A lightweight query
+  router (is this visual, numeric, or textual intent?) can weight the lanes per query — e.g.
+  trust the text lane more on verbatim-phrase questions, the visual lane on chart questions.
+- **Production hardening.** Streamed token-by-token answers, retrieved-page image caching,
+  request tracing, and retrieval-quality dashboards (rank distributions, per-lane agreement
+  rate) so drift is visible before users report it.
