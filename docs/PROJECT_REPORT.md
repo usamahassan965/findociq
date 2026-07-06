@@ -118,69 +118,72 @@ Per-question raw results: [`results/eval_results.json`](../results/eval_results.
 FastAPI REST API + Streamlit chat UI (shows the retrieved page images alongside the answer) +
 Docker Compose. Public demo: [Hugging Face Space](https://huggingface.co/spaces/usamahassan965/findociq-demo).
 
-## 4. Engineering problems actually hit (and fixed)
+## 4. Hard problems (ask me about these)
 
-1. **fp16 numerical overflow silently poisoned an embedding.** After switching the encoder from
-   bf16 to fp16 (see problem 2), exactly 1 page out of 75 came back as 755 patch vectors of pure
-   `NaN` — and Qdrant rejects NaN payloads at insert time, so the whole indexing run died. bf16
-   and fp16 both use 16 bits, but bf16 keeps float32's exponent range (~10³⁸) while fp16 caps at
-   65,504; one intermediate activation overflowed to `inf`, and `inf − inf` in the following
-   normalization produced NaN that propagated through every downstream value. Diagnosis: dumped
-   per-page `isnan()` counts, isolated the page — a near-blank cover with almost no visual signal.
-   Fix: `nan_to_num` sanitization to zero vectors, which is provably safe under MAX_SIM ranking —
-   a zero vector's dot product with any query embedding is 0, so a blank page can never outrank a
-   real one.
-2. **Running a 3B late-interaction VLM on a 2016 GPU (compute capability 6.0).** The free GPU
-   available programmatically was a Kaggle P100 — Pascal architecture, which has **no bf16
-   hardware support** and is no longer compiled into current PyTorch wheels (`CUDA error: no
-   kernel image is available for execution on the device`). ColQwen2.5's reference setup assumes
-   bf16 on Ampere or newer. The pipeline had to become hardware-adaptive: the kernel reads
-   `torch.cuda.get_device_capability()` at runtime, and below (7,0) it pins a Pascal-compatible
-   stack (`torch 2.5.1+cu121`, `colpali-engine 0.3.9`) and re-executes itself via `os.execv` so
-   the new versions are actually the ones imported. Memory math forced the rest: the fp16 weights
-   alone are 8.5 GB of the 16 GB card, and one page yields 755 × 128 patch vectors plus
-   activations — so batch size 1 with cache eviction between pages. The same code still runs
-   bf16/batched on a modern GPU; the P100 path costs ~2 min for 75 pages.
-3. **Fusing two retrievers whose scores live on incomparable scales.** The visual lane scores
-   with late-interaction MAX_SIM — an *unbounded sum* over ~30 query-token maxima that landed
+1. **The answer is one cell in a 40-row table — and every retriever walks past it.** The hardest
+   question type in the corpus: *"What is the forecast WTI spot price for Q2 2026?"* The answer
+   is a single number inside a dense quarterly statistics table (p34), and **both** lanes —
+   visual and text — rank a WTI *chart* page (p17) above it. That's not a bug in either encoder;
+   it's a granularity mismatch baked into page-level retrieval. A page-level embedding of a
+   40-row table dilutes any individual cell into an average of everything around it, while a
+   chart about the same topic is semantically "denser" for the query terms. Fusion can't rescue
+   you when both voters agree on the wrong page. The failure stays in the report deliberately —
+   knowing the exact boundary of the architecture is the point of evaluating it — and it drives
+   the first item in the next-level solution below.
+2. **Two retrievers, two incomparable scoring universes.** The visual lane scores with
+   late-interaction MAX_SIM — an *unbounded sum* over ~30 query-token maxima that landed
    anywhere from 20 to 30 depending on query length — while the text lane returns cosine
    similarity in [0, 1]. Min-max normalizing 15 candidates per lane makes the result hostage to
    each lane's outliers: one freak top score compresses every other candidate toward 0, and the
    same page gets wildly different normalized scores on different queries. Scores were dropped
    entirely in favor of *rank-space* fusion with RRF (`score = Σ 1/(60 + rank)`, fetch_k = 15 per
    lane, top_k = 5 out). The eval shows the fusion earning its keep in both directions: on the
-   insurance-float question the text lane ranks the wrong page first (0.778 vs 0.767) but the
-   visual lane's decisive margin (MAX_SIM 29.47) holds p5 at rank 1; on the natural-gas question
-   the visual lane is the one that's wrong (24.21 vs 23.98) and the text lane (cosine 0.811)
-   pulls p13 back to the top. Neither lane alone gets both questions right.
-4. **A retrieval failure signature no embedding tweak can fix.** Both hit@1 misses share one
-   signature: the question asks for a *single number inside a dense quarterly statistics table*
-   (gold: p34), and both lanes — visual and text — instead rank a chart page (p17) that
-   summarizes the same variable first. That's not a bug in either encoder; it's a granularity
-   mismatch. A page-level embedding of a 40-row table dilutes any individual cell into an average
-   of everything around it, while a chart page about the same topic is semantically "denser" for
-   the query terms. Fusion can't rescue you when both lanes agree on the wrong page. The failure
-   stays in the report deliberately — knowing the boundary of the architecture is the point of
-   evaluating it — and it directly motivates the first item in the next-level solution below.
-5. **Making an LLM judge trustworthy under a ~20-requests/day quota.** Two separate problems
-   hide in "just have an LLM grade the answers." First, integrity: if the same model generates
-   and grades, scores inherit self-grading bias — so Gemini 2.5 Flash answers and Flash-Lite
-   judges, with the judge given the gold answer and scoring faithfulness and relevance on
-   separate 1–5 rubrics rather than one vague "quality" number. Second, feasibility: free-tier
-   keys allow roughly 20 requests/day *per model per project*, and the eval needs exactly
-   10 generations + 10 judgments. That leaves a budget of *zero* wasted calls, so the eval loop
-   is idempotent — every completed answer/judgment is checkpointed to disk immediately, reruns
-   skip finished questions, and 429 responses trigger exponential backoff instead of a crash
-   that would burn the day's quota. A judge run that dies at question 9 resumes at question 9.
-6. **Decoupling GPU compute from serving with a 19 MB artifact contract.** The heavy model
-   (7.5 GB ColQwen2.5) and the serving machine never need to meet. The Kaggle kernel's only
-   output is a versioned artifact — `embeddings.npz` + manifest, ~19 MB for 75 pages — and the
-   local indexer treats it as a contract: it derives Qdrant point IDs as
-   `uuid5(doc_id, page_number)`, so re-running ingestion is idempotent (the same page always
-   maps to the same point; re-uploads overwrite instead of duplicating) and embeddings can be
-   regenerated on any GPU without touching the serving stack. Side benefit: the API key for
-   generation never leaves the local machine, because the remote kernel only ever does
-   embedding math.
+   insurance question the text lane ranks the wrong page first (0.778 vs 0.767) but the visual
+   lane's decisive margin (MAX_SIM 29.47) holds p5 at rank 1; on the natural-gas question the
+   visual lane is the one that's wrong (24.21 vs 23.98) and the text lane (cosine 0.811) pulls
+   p13 back to the top. Neither lane alone gets both questions right.
+3. **One NaN embedding took down the entire index.** Running the encoder in fp16 (forced by a
+   2016-era Pascal GPU with no bf16 hardware support), exactly 1 page out of 75 came back as 755
+   patch vectors of pure `NaN` — and Qdrant rejects NaN payloads at insert time, so the whole
+   indexing run died. bf16 and fp16 both use 16 bits, but bf16 keeps float32's exponent range
+   (~10³⁸) while fp16 caps at 65,504; one intermediate activation overflowed to `inf`, and
+   `inf − inf` in the following normalization produced NaN that propagated through every
+   downstream value. Diagnosis: dumped per-page `isnan()` counts, isolated the page — a
+   near-blank cover with almost no visual signal. Fix: `nan_to_num` sanitization to zero
+   vectors, which is provably safe under MAX_SIM ranking — a zero vector's dot product with any
+   query embedding is 0, so a blank page can never outrank a real one.
+4. **The index was born on a GPU the serving machine will never have.** Embedding a page means
+   pushing it through a 3B-parameter vision model — GPU work. But the demo serves from a free
+   CPU-only container, and the 7.5 GB model can't ride along. The way out is an asymmetry worth
+   noticing: a *page* costs 755 patch vectors through the full VLM, but a *query* is only ~30
+   token vectors — orders of magnitude lighter. So all page embeddings are computed offline on a
+   borrowed GPU (a Kaggle kernel) and shipped as a versioned ~19 MB artifact (`embeddings.npz` +
+   manifest); serving only ever pays the cheap query-side cost. The indexer treats the artifact
+   as a contract: Qdrant point IDs derive as `uuid5(doc_id, page_number)`, so re-ingestion is
+   idempotent (re-uploads overwrite instead of duplicating) and embeddings can be regenerated on
+   any GPU without touching the serving stack — the classic train-time/serve-time split, applied
+   to retrieval.
+5. **Getting a vision model to say "I don't know".** A VLM looking at five financial pages will
+   happily *read a number off the nearest chart* when the exact figure the user asked for isn't
+   there — the most dangerous failure mode in a finance context, because the answer looks
+   plausible and cites a real page. Two defenses: retrieval shows its work (the UI displays the
+   actual retrieved page images next to the answer, so a wrong number is visually checkable),
+   and the generation prompt forces a per-claim `[doc p.N]` citation and an explicit refusal
+   path when the retrieved pages don't contain the answer. Measured result: asked for the WTI
+   Q2 2026 forecast when retrieval had surfaced the chart page instead of the statistics table,
+   the model answered *"The provided document pages do not contain the forecast WTI spot price
+   for Q2 2026"* — a correct refusal that still scored faithfulness 5/5, instead of a confident
+   wrong number.
+6. **An evaluation you can trust on 20 API calls a day.** Two separate problems hide in "just
+   have an LLM grade the answers." First, integrity: if the same model generates and grades,
+   scores inherit self-grading bias — so Gemini 2.5 Flash answers and Flash-Lite judges, with
+   the judge given the gold answer and scoring faithfulness and relevance on separate 1–5
+   rubrics rather than one vague "quality" number. Second, feasibility: free-tier keys allow
+   roughly 20 requests/day *per model per project*, and the eval needs exactly 10 generations +
+   10 judgments. That leaves a budget of *zero* wasted calls, so the eval loop is idempotent —
+   every completed answer/judgment is checkpointed to disk immediately, reruns skip finished
+   questions, and 429 responses trigger exponential backoff instead of a crash that would burn
+   the day's quota. A judge run that dies at question 9 resumes at question 9.
 
 ## 5. Next-level solution
 
