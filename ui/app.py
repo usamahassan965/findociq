@@ -4,6 +4,7 @@ images the system retrieved and cited.
 Run: streamlit run ui/app.py
 """
 
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -44,11 +45,30 @@ if question:
 
     with st.chat_message("assistant"):
         with st.spinner("Retrieving pages..."):
+            t0 = time.perf_counter()
             pages = retriever.retrieve(question)
-        with st.spinner("Reading pages and answering..."):
-            answer = vlm.answer(question, pages)
+            retrieval_s = time.perf_counter() - t0
 
-        st.markdown(answer)
+        # Stream the answer token-by-token; capture time-to-first-token as we go.
+        timing = {"first_token_s": None}
+        t_gen = time.perf_counter()
+
+        def _stream():
+            for chunk in vlm.answer_stream(question, pages):
+                if timing["first_token_s"] is None:
+                    timing["first_token_s"] = time.perf_counter() - t_gen
+                yield chunk
+
+        answer = st.write_stream(_stream)
+        generation_s = time.perf_counter() - t_gen
+
+        st.caption(
+            f"⏱ retrieval {retrieval_s * 1000:.0f} ms · "
+            f"first token {timing['first_token_s']:.1f} s · "
+            f"full answer {generation_s:.1f} s"
+            if timing["first_token_s"] is not None
+            else f"⏱ retrieval {retrieval_s * 1000:.0f} ms"
+        )
 
         with st.expander(f"📄 Retrieved pages ({len(pages)})", expanded=False):
             cols = st.columns(min(len(pages), 3) or 1)

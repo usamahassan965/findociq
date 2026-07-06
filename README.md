@@ -132,6 +132,22 @@ Flash-Lite (a different model as judge reduces self-grading bias).
 | Faithfulness (LLM-judge, 1–5) | 5.0 |
 | Relevance (LLM-judge, 1–5) | 5.0 |
 
+**Ablation** (`scripts/analyze_eval.py`, computed post-hoc from captured per-lane
+rankings — zero extra API calls):
+
+| Retrieval config | hit@1 | hit@5 | MRR |
+|---|---|---|---|
+| Visual lane only (ColQwen2.5) | 0.70 | 0.90 | 0.78 |
+| Text lane only (BGE-small) | 0.60 | 0.90 | 0.75 |
+| **Hybrid (RRF fusion)** | **0.80** | **0.90** | **0.83** |
+
+Extended answer-quality checks: numeric exact-match **8/8** answered numeric
+questions, citation precision **1.00**, hallucinations on context-unanswerable
+questions **0/1** (the model refused instead), false refusals **0/9**. Stratified
+hit@1: prose questions **1.00**, dense-table lookups **0.50** — the measured
+motivation for table-aware indexing. Full breakdown:
+[`results/metrics_extended.json`](results/metrics_extended.json).
+
 Both hit@1 misses are dense quarterly-statistics-table lookups (e.g. "WTI spot
 price for Q2 2026") where the exact table page ranked below related overview
 pages — the classic hard case for page-level retrieval. Per-question details:

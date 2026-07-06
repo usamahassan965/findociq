@@ -1,0 +1,194 @@
+{
+  "ablation": {
+    "visual_only": {
+      "hit@1": 0.7,
+      "hit@5": 0.9,
+      "mrr": 0.775
+    },
+    "text_only": {
+      "hit@1": 0.6,
+      "hit@5": 0.9,
+      "mrr": 0.75
+    },
+    "hybrid_rrf": {
+      "hit@1": 0.8,
+      "hit@5": 0.9,
+      "mrr": 0.8333
+    }
+  },
+  "fusion_gain": {
+    "matches_best_lane": 9,
+    "beats_worst_lane": 4,
+    "rescued_visual_miss": 1,
+    "rescued_text_miss": 2,
+    "unrecoverable_both_lanes_wrong": 2
+  },
+  "stratified_hit_rates": {
+    "table": {
+      "n": 4,
+      "hybrid": {
+        "hit@1": 0.5,
+        "hit@5": 0.75,
+        "mrr": 0.5833
+      },
+      "visual_only": {
+        "hit@1": 0.5,
+        "hit@5": 0.75,
+        "mrr": 0.5625
+      },
+      "text_only": {
+        "hit@1": 0.25,
+        "hit@5": 0.75,
+        "mrr": 0.5
+      }
+    },
+    "prose": {
+      "n": 6,
+      "hybrid": {
+        "hit@1": 1.0,
+        "hit@5": 1.0,
+        "mrr": 1.0
+      },
+      "visual_only": {
+        "hit@1": 0.8333333333333334,
+        "hit@5": 1.0,
+        "mrr": 0.9167
+      },
+      "text_only": {
+        "hit@1": 0.8333333333333334,
+        "hit@5": 1.0,
+        "mrr": 0.9167
+      }
+    }
+  },
+  "numeric_exact_match": {
+    "n_checked": 8,
+    "matched": 8,
+    "rate": 1.0
+  },
+  "citations": {
+    "n_answered_with_citations": 9,
+    "precision_avg": 1.0,
+    "gold_cited_rate": 1.0
+  },
+  "refusal_matrix": {
+    "answered_when_answerable": 9,
+    "refused_when_answerable": 0,
+    "refused_when_unanswerable": 1,
+    "hallucinated_when_unanswerable": 0
+  },
+  "per_question": [
+    {
+      "q": 1,
+      "stratum": "table",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "9020",
+      "numeric_match": true,
+      "cited": [
+        "berkshire_2024_letter::p5"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 2,
+      "stratum": "prose",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "53",
+      "numeric_match": true,
+      "cited": [
+        "berkshire_2024_letter::p4"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 3,
+      "stratum": "prose",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "3",
+      "numeric_match": true,
+      "cited": [
+        "berkshire_2024_letter::p6"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 4,
+      "stratum": "table",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "49.5",
+      "numeric_match": true,
+      "cited": [
+        "berkshire_2024_letter::p14"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 5,
+      "stratum": "table",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "95",
+      "numeric_match": true,
+      "cited": [
+        "eia_short_term_energy_outlook::p3"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 6,
+      "stratum": "prose",
+      "refused": false,
+      "context_answerable": true,
+      "cited": [
+        "eia_short_term_energy_outlook::p6"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 7,
+      "stratum": "prose",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "3.3",
+      "numeric_match": true,
+      "cited": [
+        "eia_short_term_energy_outlook::p13"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 8,
+      "stratum": "prose",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "2.94",
+      "numeric_match": true,
+      "cited": [
+        "eia_short_term_energy_outlook::p12"
+      ],
+      "citation_precision": 1.0
+    },
+    {
+      "q": 9,
+      "stratum": "table",
+      "refused": true,
+      "context_answerable": false
+    },
+    {
+      "q": 10,
+      "stratum": "prose",
+      "refused": false,
+      "context_answerable": true,
+      "key_figure": "11",
+      "numeric_match": true,
+      "cited": [
+        "eia_short_term_energy_outlook::p15"
+      ],
+      "citation_precision": 1.0
+    }
+  ]
+}

@@ -11,6 +11,7 @@ directly instead of a lossy OCR transcript.
 
 import base64
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
 
 import requests
@@ -35,6 +36,11 @@ class VLMClient(ABC):
     @abstractmethod
     def answer(self, question: str, pages: list[RetrievedPage]) -> str: ...
 
+    def answer_stream(self, question: str, pages: list[RetrievedPage]) -> Iterator[str]:
+        """Yield answer text incrementally. Providers without streaming support
+        fall back to a single chunk."""
+        yield self.answer(question, pages)
+
 
 class GeminiClient(VLMClient):
     def __init__(self):
@@ -46,7 +52,7 @@ class GeminiClient(VLMClient):
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.gemini_model
 
-    def answer(self, question: str, pages: list[RetrievedPage]) -> str:
+    def _build_parts(self, question: str, pages: list[RetrievedPage]):
         from google.genai import types
 
         parts = [
@@ -54,12 +60,29 @@ class GeminiClient(VLMClient):
             for p in pages
         ]
         parts.append(types.Part.from_text(text=_build_user_text(question, pages)))
+        return parts
+
+    def _config(self):
+        from google.genai import types
+
+        return types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT)
+
+    def answer(self, question: str, pages: list[RetrievedPage]) -> str:
         response = self.client.models.generate_content(
             model=self.model,
-            contents=parts,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            contents=self._build_parts(question, pages),
+            config=self._config(),
         )
         return response.text or ""
+
+    def answer_stream(self, question: str, pages: list[RetrievedPage]) -> Iterator[str]:
+        for chunk in self.client.models.generate_content_stream(
+            model=self.model,
+            contents=self._build_parts(question, pages),
+            config=self._config(),
+        ):
+            if chunk.text:
+                yield chunk.text
 
 
 class OllamaClient(VLMClient):

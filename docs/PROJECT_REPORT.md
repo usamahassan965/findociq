@@ -101,6 +101,46 @@ separate 1–5 faithfulness and relevance rubrics, with the gold answer in the j
 | Faithfulness (LLM-judge, 1–5) | **5.0** |
 | Relevance (LLM-judge, 1–5) | **5.0** |
 
+**Ablation — does the hybrid actually earn its keep?** Same 10 questions, three retrieval
+configurations, computed post-hoc from the captured per-lane rankings with zero extra API calls
+([`scripts/analyze_eval.py`](../scripts/analyze_eval.py)):
+
+| Retrieval config | hit@1 | hit@5 | MRR |
+|---|---|---|---|
+| Visual lane only (ColQwen2.5) | 0.70 | 0.90 | 0.78 |
+| Text lane only (BGE-small) | 0.60 | 0.90 | 0.75 |
+| **Hybrid (RRF fusion)** | **0.80** | **0.90** | **0.83** |
+
+The fused ranking matched or beat the better single lane on **9 of 10** questions, rescuing
+2 text-lane misses and 1 visual-lane miss. The two remaining misses are exactly the questions
+where *both* lanes rank the wrong page — fusion can't outvote a unanimous mistake.
+
+**Stratified hit@1 — where retrieval degrades:**
+
+| Question type | n | Hybrid | Visual only | Text only |
+|---|---|---|---|---|
+| Prose / narrative | 6 | **1.00** | 0.83 | 0.83 |
+| Numeric table lookup | 4 | **0.50** | 0.50 | 0.25 |
+
+The aggregate 0.80 hides the real story: retrieval is perfect on prose and coin-flip on
+dense-table lookups — which is why table-aware indexing leads the next-level solution.
+
+**Answer quality — objective checks beyond the LLM judge:**
+
+| Metric | Score |
+|---|---|
+| Numeric exact-match (reference key figure present in answer) | **8/8** answered numeric questions |
+| Citation precision (cited pages that are gold pages) | **1.00** |
+| Gold page cited in the answer | **1.00** |
+| Hallucinations when the gold page wasn't retrieved | **0/1** (model refused instead) |
+| False refusals on answerable questions | **0/9** |
+
+Financial answers are numbers, so correctness is checked by *parsing*, not by another LLM:
+every answered question contains the reference answer's key figure verbatim. The refusal matrix
+is the grounding proof — one question's gold page never reached the model, and it said so
+instead of reading a plausible number off the nearest chart. Full breakdown:
+[`results/metrics_extended.json`](../results/metrics_extended.json).
+
 **Failure analysis** — both hit@1 misses are the same shape: quarterly-statistics-table lookups
 (e.g. *"WTI spot price for Q2 2026"*, gold p34 below right). The gold page is a wall of small
 numbers with almost no distinguishing text or visual structure; both lanes rank the WTI *price
@@ -117,6 +157,9 @@ Per-question raw results: [`results/eval_results.json`](../results/eval_results.
 ### Stage 6 — Serving
 FastAPI REST API + Streamlit chat UI (shows the retrieved page images alongside the answer) +
 Docker Compose. Public demo: [Hugging Face Space](https://huggingface.co/spaces/usamahassan965/findociq-demo).
+Answers **stream token-by-token**, and every response carries per-stage latency (retrieval ms ·
+time-to-first-token · full answer); the API returns the same timings in JSON and exposes a
+`/query/stream` endpoint.
 
 ## 4. Hard problems (ask me about these)
 
@@ -207,6 +250,7 @@ a measured limitation, not a hypothetical one.
 - **Query-adaptive lane weighting.** Today both lanes vote equally in RRF. A lightweight query
   router (is this visual, numeric, or textual intent?) can weight the lanes per query — e.g.
   trust the text lane more on verbatim-phrase questions, the visual lane on chart questions.
-- **Production hardening.** Streamed token-by-token answers, retrieved-page image caching,
-  request tracing, and retrieval-quality dashboards (rank distributions, per-lane agreement
-  rate) so drift is visible before users report it.
+- **Production hardening.** Token-by-token streaming and per-stage latency instrumentation are
+  now shipped (UI + API); still ahead: retrieved-page image caching, request tracing, and
+  retrieval-quality dashboards (rank distributions, per-lane agreement rate) so drift is
+  visible before users report it.

@@ -10,6 +10,7 @@ needs more compute than a free Space provides.
 
 import json
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -59,7 +60,8 @@ def retrieve(query: str, records, matrix, embedder) -> list[dict]:
     return [{**records[i], "score": float(scores[i])} for i in order]
 
 
-def generate_answer(client, question: str, hits: list[dict]) -> str:
+def stream_answer(client, question: str, hits: list[dict]):
+    """Yield answer text chunks from Gemini as they arrive."""
     from google.genai import types
 
     parts = [
@@ -74,12 +76,13 @@ def generate_answer(client, question: str, hits: list[dict]) -> str:
     parts.append(
         types.Part.from_text(text=f"Document pages provided:\n{page_list}\n\nQuestion: {question}")
     )
-    response = client.models.generate_content(
+    for chunk in client.models.generate_content_stream(
         model=GEMINI_MODEL,
         contents=parts,
         config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-    )
-    return response.text or ""
+    ):
+        if chunk.text:
+            yield chunk.text
 
 
 st.set_page_config(page_title="FinDocIQ demo", page_icon="📊", layout="wide")
@@ -120,11 +123,29 @@ if question:
 
     with st.chat_message("assistant"):
         with st.spinner("Retrieving pages..."):
+            t0 = time.perf_counter()
             hits = retrieve(question, records, matrix, embedder)
-        with st.spinner("Reading pages and answering..."):
-            answer = generate_answer(client, question, hits)
+            retrieval_s = time.perf_counter() - t0
 
-        st.markdown(answer)
+        timing = {"first_token_s": None}
+        t_gen = time.perf_counter()
+
+        def _stream():
+            for chunk in stream_answer(client, question, hits):
+                if timing["first_token_s"] is None:
+                    timing["first_token_s"] = time.perf_counter() - t_gen
+                yield chunk
+
+        answer = st.write_stream(_stream)
+        generation_s = time.perf_counter() - t_gen
+
+        st.caption(
+            f"⏱ retrieval {retrieval_s * 1000:.0f} ms · "
+            f"first token {timing['first_token_s']:.1f} s · "
+            f"full answer {generation_s:.1f} s"
+            if timing["first_token_s"] is not None
+            else f"⏱ retrieval {retrieval_s * 1000:.0f} ms"
+        )
 
         with st.expander(f"📄 Retrieved pages ({len(hits)})", expanded=False):
             cols = st.columns(min(len(hits), 3) or 1)
