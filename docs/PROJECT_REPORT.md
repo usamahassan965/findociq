@@ -161,72 +161,108 @@ Answers **stream token-by-token**, and every response carries per-stage latency 
 time-to-first-token · full answer); the API returns the same timings in JSON and exposes a
 `/query/stream` endpoint.
 
-## 4. Hard problems (ask me about these)
+## 4. Problems I faced
 
-1. **The answer is one cell in a 40-row table — and every retriever walks past it.** The hardest
-   question type in the corpus: *"What is the forecast WTI spot price for Q2 2026?"* The answer
-   is a single number inside a dense quarterly statistics table (p34), and **both** lanes —
-   visual and text — rank a WTI *chart* page (p17) above it. That's not a bug in either encoder;
-   it's a granularity mismatch baked into page-level retrieval. A page-level embedding of a
-   40-row table dilutes any individual cell into an average of everything around it, while a
-   chart about the same topic is semantically "denser" for the query terms. Fusion can't rescue
-   you when both voters agree on the wrong page. The failure stays in the report deliberately —
-   knowing the exact boundary of the architecture is the point of evaluating it — and it drives
-   the first item in the next-level solution below.
-2. **Two retrievers, two incomparable scoring universes.** The visual lane scores with
-   late-interaction MAX_SIM — an *unbounded sum* over ~30 query-token maxima that landed
-   anywhere from 20 to 30 depending on query length — while the text lane returns cosine
-   similarity in [0, 1]. Min-max normalizing 15 candidates per lane makes the result hostage to
-   each lane's outliers: one freak top score compresses every other candidate toward 0, and the
-   same page gets wildly different normalized scores on different queries. Scores were dropped
-   entirely in favor of *rank-space* fusion with RRF (`score = Σ 1/(60 + rank)`, fetch_k = 15 per
-   lane, top_k = 5 out). The eval shows the fusion earning its keep in both directions: on the
-   insurance question the text lane ranks the wrong page first (0.778 vs 0.767) but the visual
-   lane's decisive margin (MAX_SIM 29.47) holds p5 at rank 1; on the natural-gas question the
-   visual lane is the one that's wrong (24.21 vs 23.98) and the text lane (cosine 0.811) pulls
-   p13 back to the top. Neither lane alone gets both questions right.
-3. **One NaN embedding took down the entire index.** Running the encoder in fp16 (forced by a
-   2016-era Pascal GPU with no bf16 hardware support), exactly 1 page out of 75 came back as 755
-   patch vectors of pure `NaN` — and Qdrant rejects NaN payloads at insert time, so the whole
-   indexing run died. bf16 and fp16 both use 16 bits, but bf16 keeps float32's exponent range
-   (~10³⁸) while fp16 caps at 65,504; one intermediate activation overflowed to `inf`, and
-   `inf − inf` in the following normalization produced NaN that propagated through every
-   downstream value. Diagnosis: dumped per-page `isnan()` counts, isolated the page — a
-   near-blank cover with almost no visual signal. Fix: `nan_to_num` sanitization to zero
-   vectors, which is provably safe under MAX_SIM ranking — a zero vector's dot product with any
-   query embedding is 0, so a blank page can never outrank a real one.
-4. **The index was born on a GPU the serving machine will never have.** Embedding a page means
-   pushing it through a 3B-parameter vision model — GPU work. But the demo serves from a free
-   CPU-only container, and the 7.5 GB model can't ride along. The way out is an asymmetry worth
-   noticing: a *page* costs 755 patch vectors through the full VLM, but a *query* is only ~30
-   token vectors — orders of magnitude lighter. So all page embeddings are computed offline on a
-   borrowed GPU (a Kaggle kernel) and shipped as a versioned ~19 MB artifact (`embeddings.npz` +
-   manifest); serving only ever pays the cheap query-side cost. The indexer treats the artifact
-   as a contract: Qdrant point IDs derive as `uuid5(doc_id, page_number)`, so re-ingestion is
-   idempotent (re-uploads overwrite instead of duplicating) and embeddings can be regenerated on
-   any GPU without touching the serving stack — the classic train-time/serve-time split, applied
-   to retrieval.
-5. **Getting a vision model to say "I don't know".** A VLM looking at five financial pages will
-   happily *read a number off the nearest chart* when the exact figure the user asked for isn't
-   there — the most dangerous failure mode in a finance context, because the answer looks
-   plausible and cites a real page. Two defenses: retrieval shows its work (the UI displays the
-   actual retrieved page images next to the answer, so a wrong number is visually checkable),
-   and the generation prompt forces a per-claim `[doc p.N]` citation and an explicit refusal
-   path when the retrieved pages don't contain the answer. Measured result: asked for the WTI
-   Q2 2026 forecast when retrieval had surfaced the chart page instead of the statistics table,
-   the model answered *"The provided document pages do not contain the forecast WTI spot price
-   for Q2 2026"* — a correct refusal that still scored faithfulness 5/5, instead of a confident
-   wrong number.
-6. **An evaluation you can trust on 20 API calls a day.** Two separate problems hide in "just
-   have an LLM grade the answers." First, integrity: if the same model generates and grades,
-   scores inherit self-grading bias — so Gemini 2.5 Flash answers and Flash-Lite judges, with
-   the judge given the gold answer and scoring faithfulness and relevance on separate 1–5
-   rubrics rather than one vague "quality" number. Second, feasibility: free-tier keys allow
-   roughly 20 requests/day *per model per project*, and the eval needs exactly 10 generations +
-   10 judgments. That leaves a budget of *zero* wasted calls, so the eval loop is idempotent —
-   every completed answer/judgment is checkpointed to disk immediately, reruns skip finished
-   questions, and 429 responses trigger exponential backoff instead of a crash that would burn
-   the day's quota. A judge run that dies at question 9 resumes at question 9.
+Each problem is stated plainly, followed by how it was solved — with the real numbers behind
+both.
+
+### 1. The answer is one cell in a 40-row table — and every retriever walks past it
+
+**Problem** — Ask *"What is the forecast WTI spot price for Q2 2026?"* and the system fetches
+the wrong page. The correct answer is one number inside a huge quarterly statistics table (p34),
+but both retrievers — visual and text — rank a WTI price *chart* (p17) above it. The reason is
+simple once you see it: the system creates one embedding per *page*, so a table with 40 rows of
+numbers gets blended into a single average in which no individual cell stands out. A chart page
+about the same topic looks far more "relevant" to the query words. And because *both* lanes make
+the same mistake, fusion can't outvote it.
+
+**Solution** — First, measure it honestly instead of hiding it: the stratified eval shows
+retrieval is perfect (1.00 hit@1) on prose questions and coin-flip (0.50) on dense-table
+lookups — the failure is precisely bounded, not vague. The real fix is a granularity change,
+not a better embedding: extract tables during ingestion and index individual rows/cells
+alongside whole pages, then route "what was X in Q3"-style numeric questions to that
+fine-grained index. That's the top item in the next-level solution below. Meanwhile the system
+fails *safely* — see problem 5.
+
+### 2. Two retrievers, two incomparable scoring universes
+
+**Problem** — The two search lanes speak different languages. The visual lane scores pages with
+MAX_SIM — an open-ended sum that landed anywhere between 20 and 30 depending on how long the
+question is. The text lane returns cosine similarity, always between 0 and 1. You can't average
+a "29.47" with a "0.77" — and normalizing doesn't save you: squeeze each lane's 15 candidates
+into 0–1 and one unusually high top score crushes everyone else toward zero, so the same page
+gets a completely different normalized score from one question to the next.
+
+**Solution** — Stop comparing scores and compare *positions* instead. Reciprocal Rank Fusion
+only asks each lane "what's your 1st, 2nd, 3rd choice?" and rewards pages that rank high in
+both lists (`score = Σ 1/(60 + rank)`). No scales to reconcile, no training data needed. The
+eval proves it works in both directions: on the insurance question the text lane picks the
+wrong page (0.778 vs 0.767 — nearly tied) but the visual lane's confident 29.47 keeps the right
+page at #1; on the natural-gas question the roles flip — the visual lane errs (24.21 vs 23.98)
+and the text lane's clear 0.811 pulls the right page back to the top. Neither lane alone gets
+both right; the fusion gets both.
+
+### 3. One NaN embedding took down the entire index
+
+**Problem** — The indexing run crashed because exactly 1 page out of 75 produced embeddings
+that were pure `NaN` (not-a-number), which the vector database rejects outright. The root cause
+was the number format forced by the old GPU: fp16 can only represent numbers up to 65,504,
+while the bf16 format the model was designed for reaches ~10³⁸. Somewhere inside the model one
+intermediate value exceeded that ceiling and became "infinity", and a later
+`infinity − infinity` step produced NaN — which then contaminated every downstream number for
+that page.
+
+**Solution** — Count the NaNs per page to isolate the culprit — it turned out to be a nearly
+blank cover page with almost nothing on it. Then replace the broken values with zeros
+(`nan_to_num`). That's not a hack, it's provably safe: retrieval scores pages by dot products
+against the query, and a zero vector scores exactly 0 against anything — so a blank page can
+never outrank a real one. The indexing run completes, and the one affected page simply never
+wins retrieval, which is the correct behavior for a blank page.
+
+### 4. The index was born on a GPU the serving machine will never have
+
+**Problem** — Turning a page into embeddings means pushing it through a 3-billion-parameter
+vision model — that needs a GPU and 7.5 GB of weights. But the demo runs on a free CPU-only
+container that could never load the model, let alone run it. How does a machine that can't run
+the embedder serve an index built by it?
+
+**Solution** — Notice the asymmetry: a *page* costs 755 patch vectors through the full model,
+but a *question* is only ~30 token vectors — thousands of times cheaper. So the expensive
+page-side work happens once, offline, on a borrowed Kaggle GPU, and only the results travel: a
+~19 MB artifact (`embeddings.npz` + manifest) instead of a 7.5 GB model. The indexer treats
+that artifact as a contract — every page gets a deterministic ID (`uuid5(doc_id,
+page_number)`), so re-running ingestion overwrites cleanly instead of duplicating, and the
+embeddings can be regenerated on any GPU without touching the serving stack. It's the classic
+train-time/serve-time split, applied to retrieval.
+
+### 5. Getting a vision model to say "I don't know"
+
+**Problem** — Show a vision model five financial pages and ask for a number that isn't on them,
+and it will happily read a *similar* number off the nearest chart. In finance that's the most
+dangerous failure possible: the answer looks plausible, cites a real page, and is wrong.
+
+**Solution** — Two layers. First, the generation prompt demands a `[doc p.N]` citation for
+every claim and gives the model an explicit exit: if the pages don't contain the answer, say
+so. Second, the UI shows the actual retrieved page images next to every answer, so any number
+is visually checkable in seconds. It measurably works: when retrieval surfaced the WTI chart
+page instead of the statistics table (problem 1), the model answered *"The provided document
+pages do not contain the forecast WTI spot price for Q2 2026"* — a correct refusal instead of a
+confident wrong number. Across the whole eval: 0 hallucinations, 0 false refusals.
+
+### 6. An evaluation you can trust on 20 API calls a day
+
+**Problem** — Two traps hide in "just have an LLM grade the answers." Trap one: if the same
+model both writes and grades the answers, it grades its own homework — scores come out
+inflated. Trap two: the free API tier allows roughly 20 requests per day per model, and one
+full eval needs exactly 20 calls (10 answers + 10 judgments). A single crash mid-run wastes
+calls you cannot get back until tomorrow.
+
+**Solution** — Separate the roles: Gemini 2.5 Flash writes the answers, Flash-Lite — a
+different model — judges them, with the gold answer in hand and two separate 1–5 rubrics
+(faithfulness and relevance) instead of one vague "quality" score. Then make the loop
+unbreakable: every completed answer and judgment is saved to disk immediately, reruns skip
+anything already finished, and rate-limit errors trigger wait-and-retry instead of a crash. A
+run that dies at question 9 resumes at question 9 — zero wasted quota.
 
 ## 5. Next-level solution
 
